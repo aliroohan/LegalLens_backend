@@ -148,7 +148,7 @@ async def analyze_image(file: UploadFile = File(...)):
     }
 
     elapsed_time = time.time() - start_time
-    print(f"Analysis API for '{file.filename}' took {elapsed_time:.2f} seconds.")
+    logger.info(f"Analysis API for '{file.filename}' took {elapsed_time:.2f} seconds.")
 
     return response
 
