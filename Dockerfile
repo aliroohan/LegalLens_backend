@@ -11,7 +11,9 @@ RUN useradd -m -u 1000 appuser
 WORKDIR /app
 
 # System deps required by OpenCV
-RUN apt-get update && \
+# Force HTTPS apt mirrors (some networks block plain HTTP on port 80).
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources && \
+    apt-get update -o Acquire::Retries=5 && \
     apt-get install -y --no-install-recommends \
         libgl1 \
         libglib2.0-0 \

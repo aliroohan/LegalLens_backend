@@ -7,7 +7,12 @@ Provides the main API endpoints for image forensic analysis:
 """
 
 import io
+import time
+import logging
+import asyncio
 import base64
+
+logger = logging.getLogger(__name__)
 import cv2
 import numpy as np
 from PIL import Image
@@ -47,6 +52,7 @@ async def analyze_image(file: UploadFile = File(...)):
     """
     Run all forensic analysis techniques on the uploaded image.
     """
+    start_time = time.time()
     if file.content_type not in ALLOWED_TYPES:
         raise HTTPException(
             status_code=400,
@@ -63,36 +69,30 @@ async def analyze_image(file: UploadFile = File(...)):
     img = Image.open(io.BytesIO(image_bytes))
     width, height = img.size
 
-    # --- Run all analyses ---
-    try:
-        ela_result = run_ela(image_bytes)
-    except Exception as e:
-        ela_result = {"visualization": None, "confidence": 0, "findings": [f"ELA failed: {e}"]}
+    # --- Run all analyses concurrently ---
+    def safe_analyze(func, bytes_data, is_metadata=False):
+        try:
+            return func(bytes_data)
+        except Exception as e:
+            if is_metadata:
+                return {"data": {}, "flags": [], "findings": [f"{func.__name__} failed: {e}"]}
+            return {"visualization": None, "confidence": 0, "findings": [f"{func.__name__} failed: {e}"]}
 
-    try:
-        copy_move_result = run_copy_move(image_bytes)
-    except Exception as e:
-        copy_move_result = {"visualization": None, "confidence": 0, "findings": [f"Copy-move failed: {e}"]}
-
-    try:
-        noise_result = run_noise_analysis(image_bytes)
-    except Exception as e:
-        noise_result = {"visualization": None, "confidence": 0, "findings": [f"Noise analysis failed: {e}"]}
-
-    try:
-        compression_result = run_compression_analysis(image_bytes)
-    except Exception as e:
-        compression_result = {"visualization": None, "confidence": 0, "findings": [f"Compression analysis failed: {e}"]}
-
-    try:
-        metadata_result = run_metadata_analysis(image_bytes)
-    except Exception as e:
-        metadata_result = {"data": {}, "flags": [], "findings": [f"Metadata analysis failed: {e}"]}
-
-    try:
-        splicing_result = run_splicing_detection(image_bytes)
-    except Exception as e:
-        splicing_result = {"visualization": None, "confidence": 0, "findings": [f"Splicing detection failed: {e}"]}
+    (
+        ela_result,
+        copy_move_result,
+        noise_result,
+        compression_result,
+        metadata_result,
+        splicing_result
+    ) = await asyncio.gather(
+        asyncio.to_thread(safe_analyze, run_ela, image_bytes),
+        asyncio.to_thread(safe_analyze, run_copy_move, image_bytes),
+        asyncio.to_thread(safe_analyze, run_noise_analysis, image_bytes),
+        asyncio.to_thread(safe_analyze, run_compression_analysis, image_bytes),
+        asyncio.to_thread(safe_analyze, run_metadata_analysis, image_bytes, True),
+        asyncio.to_thread(safe_analyze, run_splicing_detection, image_bytes)
+    )
 
     # --- Build response ---
     response = {
@@ -146,6 +146,9 @@ async def analyze_image(file: UploadFile = File(...)):
             },
         },
     }
+
+    elapsed_time = time.time() - start_time
+    print(f"Analysis API for '{file.filename}' took {elapsed_time:.2f} seconds.")
 
     return response
 
