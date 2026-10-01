@@ -4,7 +4,7 @@ from routes.analysis_router import router as analysis_router
 
 app = FastAPI(
     title="ForensicLens API",
-    description="Image forensics tool using classic Digital Image Processing techniques.",
+    description="Image forensics tool.",
     version="1.0.0",
 )
 
