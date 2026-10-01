@@ -7,3 +7,6 @@ uploads/
 dist/
 build/
 static/
+
+node_modules/
+backend-server/node_modules/
