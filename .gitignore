@@ -7,3 +7,5 @@ uploads/
 dist/
 build/
 static/
+
+node_modules/
