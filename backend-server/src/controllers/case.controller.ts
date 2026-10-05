@@ -4,11 +4,15 @@ import { sendSuccess, sendError } from '../utils/apiResponse.ts';
 import type { CaseFilterQueryInput } from '../validators/case.validator.ts';
 
 export class CaseController {
+  private static resolveFirmId(req: Request): string {
+    return req.user?.orgId || req.user?.firmId || (req.user?.isIndependent ? req.user.userId : 'firm_default');
+  }
+
   static async createCase(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = req.user!.userId;
       const userEmail = req.user?.email;
-      const firmId = req.user?.firmId || 'firm_default';
+      const firmId = CaseController.resolveFirmId(req);
 
       const { caseData, warning } = await CaseService.createCase(req.body, userId, userEmail, firmId);
       sendSuccess(res, caseData, 201, warning ? { warning } : undefined);
@@ -19,7 +23,7 @@ export class CaseController {
 
   static async listCases(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const firmId = req.user?.firmId || 'firm_default';
+      const firmId = CaseController.resolveFirmId(req);
       const filters = req.query as unknown as CaseFilterQueryInput;
 
       const result = await CaseService.listCases(filters, firmId);
@@ -36,7 +40,7 @@ export class CaseController {
   static async getCaseById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const caseId = req.params.caseId as string;
-      const firmId = req.user?.firmId || 'firm_default';
+      const firmId = CaseController.resolveFirmId(req);
 
       const caseData = await CaseService.getCaseById(caseId, firmId);
       if (!caseData) {
@@ -54,7 +58,7 @@ export class CaseController {
       const caseId = req.params.caseId as string;
       const userId = req.user!.userId;
       const userEmail = req.user?.email;
-      const firmId = req.user?.firmId || 'firm_default';
+      const firmId = CaseController.resolveFirmId(req);
 
       const updated = await CaseService.updateCase(caseId, req.body, userId, userEmail, firmId);
       sendSuccess(res, updated, 200);
@@ -69,7 +73,7 @@ export class CaseController {
       const { confirmCaseName } = req.body;
       const userId = req.user!.userId;
       const userEmail = req.user?.email;
-      const firmId = req.user?.firmId || 'firm_default';
+      const firmId = CaseController.resolveFirmId(req);
 
       await CaseService.deleteCase(caseId, confirmCaseName, userId, userEmail, firmId);
       sendSuccess(res, { message: `Case '${confirmCaseName}' permanently deleted.` }, 200);

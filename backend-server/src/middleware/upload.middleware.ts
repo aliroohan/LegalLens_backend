@@ -4,12 +4,11 @@ import type { Request } from 'express';
 import {
   ALLOWED_IMAGE_MIME_TYPES,
   ALLOWED_DOCUMENT_MIME_TYPES,
-  MAX_IMAGE_SIZE_BYTES,
-  MAX_DOCUMENT_SIZE_BYTES
+  ALLOWED_VIDEO_MIME_TYPES,
+  ALLOWED_AUDIO_MIME_TYPES,
+  MAX_VIDEO_SIZE_BYTES,
+  ALL_ALLOWED_EXTENSIONS
 } from '../config/constants.ts';
-
-// Allowed extensions map for friendly messages
-const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.pdf', '.docx', '.doc', '.txt'];
 
 // Use memory storage so we can compute SHA-256 and cleanly write original + working copy
 const storage = multer.memoryStorage();
@@ -24,11 +23,13 @@ const fileFilter = (
 
   const isImageMime = (ALLOWED_IMAGE_MIME_TYPES as readonly string[]).includes(mime);
   const isDocMime = (ALLOWED_DOCUMENT_MIME_TYPES as readonly string[]).includes(mime);
-  const isAllowedExt = ALLOWED_EXTENSIONS.includes(ext);
+  const isVideoMime = (ALLOWED_VIDEO_MIME_TYPES as readonly string[]).includes(mime);
+  const isAudioMime = (ALLOWED_AUDIO_MIME_TYPES as readonly string[]).includes(mime);
+  const isAllowedExt = (ALL_ALLOWED_EXTENSIONS as readonly string[]).includes(ext);
 
-  if (!isAllowedExt || (!isImageMime && !isDocMime)) {
+  if (!isAllowedExt && !isImageMime && !isDocMime && !isVideoMime && !isAudioMime) {
     const error = new Error(
-      `Unsupported file format '${ext || mime}'. Accepted formats: Images (JPEG, PNG, WEBP) and Documents (PDF, DOCX, TXT).`
+      `Unsupported file format '${ext || mime}'. Accepted formats: Images (JPEG, PNG, WEBP), Documents (PDF, DOCX, TXT), Video (MP4, MOV, AVI, MKV, MPEG, 3GP, WebM), and Audio (WAV, MP3, M4A/AAC, FLAC, AMR).`
     );
     (error as unknown as { code: string }).code = 'INVALID_FILE_TYPE';
     return cb(error);
@@ -40,9 +41,9 @@ const fileFilter = (
 export const upload = multer({
   storage,
   limits: {
-    // Top-level limit to max document size; individual file size checked strictly in service
-    fileSize: MAX_DOCUMENT_SIZE_BYTES,
-    files: 10 // Max batch size
+    // Top-level limit set to 100MB; individual file size checked strictly per category in service (FR-3.3)
+    fileSize: MAX_VIDEO_SIZE_BYTES,
+    files: 20 // Max batch size
   },
   fileFilter
 });

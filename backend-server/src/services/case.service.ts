@@ -276,4 +276,17 @@ export class CaseService {
       }
     );
   }
+
+  /**
+   * Refresh file count and touch last activity timestamp (FR-2.2)
+   */
+  static async touchCaseActivity(caseId: string): Promise<void> {
+    const fileCount = await FileModel.countDocuments({ caseId, isDeleted: false });
+    await CaseModel.updateOne(
+      { caseId },
+      {
+        $set: { fileCount, lastActivityAt: new Date() }
+      }
+    );
+  }
 }

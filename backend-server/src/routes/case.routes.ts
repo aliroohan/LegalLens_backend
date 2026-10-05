@@ -1,6 +1,10 @@
 import { Router } from 'express';
 import { CaseController } from '../controllers/case.controller.ts';
-import { requireAuth } from '../middleware/auth.middleware.ts';
+import {
+  requireAuth,
+  requireVerifiedBarId,
+  restrictSuperAdminFromCases
+} from '../middleware/auth.middleware.ts';
 import { validateBody, validateQuery } from '../middleware/validate.middleware.ts';
 import {
   createCaseSchema,
@@ -11,8 +15,8 @@ import {
 
 const router = Router();
 
-// All case operations require authentication
-router.use(requireAuth);
+// All case operations require authentication, confirmed Bar ID, and isolation from Super Admin
+router.use(requireAuth, requireVerifiedBarId, restrictSuperAdminFromCases);
 
 router.post('/', validateBody(createCaseSchema), CaseController.createCase);
 router.get('/', validateQuery(caseFilterQuerySchema), CaseController.listCases);
