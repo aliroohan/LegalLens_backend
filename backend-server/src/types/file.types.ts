@@ -1,4 +1,6 @@
-export type FileCategory = 'image' | 'document';
+import type { FileProcessingStatus } from '../config/constants.ts';
+
+export type FileCategory = 'image' | 'document' | 'video' | 'audio';
 
 export interface IFileRecord {
   fileId: string;
@@ -9,9 +11,11 @@ export interface IFileRecord {
   fileCategory: FileCategory;
   sizeBytes: number;
   uploaderId: string;
+  orgId?: string;
   sha256Hash: string;
   storagePath: string;
   workingCopyPath: string;
+  processingStatus: FileProcessingStatus;
   isDeleted: boolean;
   uploadedAt: Date;
   deletedAt?: Date;
@@ -26,5 +30,6 @@ export interface UploadedFileResponse {
   fileCategory: FileCategory;
   sizeBytes: number;
   sha256Hash: string;
+  processingStatus: FileProcessingStatus;
   uploadedAt: Date;
 }

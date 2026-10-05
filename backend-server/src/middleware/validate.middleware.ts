@@ -21,6 +21,9 @@ export const validateBody = (schema: AnyZodObject) => {
   };
 };
 
+export const validate = validateBody;
+
+
 export const validateQuery = (schema: AnyZodObject) => {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
