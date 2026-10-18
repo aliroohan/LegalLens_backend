@@ -12,4 +12,13 @@ export const ENV = {
   PYTHON_FORENSICS_URL: process.env.PYTHON_FORENSICS_URL || 'http://127.0.0.1:8000',
   UPLOAD_DIR: process.env.UPLOAD_DIR || path.resolve(process.cwd(), 'uploads'),
   CORS_ORIGIN: process.env.CORS_ORIGIN || '*'
+
+  // NODE_ENV: process.env.NODE_ENV,
+  // PORT: parseInt(process.env.PORT || '5000' , 10),
+  // MONGO_URI: process.env.MONGO_URI ,
+  // JWT_SECRET: process.env.JWT_SECRET ,
+  // JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN ,
+  // PYTHON_FORENSICS_URL: process.env.PYTHON_FORENSICS_URL ,
+  // UPLOAD_DIR: process.env.UPLOAD_DIR || path.resolve(process.cwd(), 'uploads'),
+  // CORS_ORIGIN: process.env.CORS_ORIGIN || '*'
 };

@@ -1,0 +1,26 @@
+{
+  "name": "legallens_backend",
+  "version": "1.0.0",
+  "description": "Comprehensive digital evidence management and multi-modal image forensics system designed for legal teams, law firms, and independent lawyers.",
+  "homepage": "https://github.com/aliroohan/LegalLens_backend#readme",
+  "bugs": {
+    "url": "https://github.com/aliroohan/LegalLens_backend/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aliroohan/LegalLens_backend.git"
+  },
+  "license": "ISC",
+  "author": "",
+  "scripts": {
+    "postinstall": "npm install --prefix backend-server",
+    "start": "npm run start --prefix backend-server",
+    "dev": "npm run dev --prefix backend-server",
+    "build": "npm run build --prefix backend-server",
+    "test": "npm run test --prefix backend-server"
+  },
+  "engines": {
+    "node": ">=20.x",
+    "npm": ">=10.x"
+  }
+}
