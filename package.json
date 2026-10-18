@@ -16,7 +16,6 @@
     "postinstall": "npm install --prefix backend-server",
     "start": "npm run start --prefix backend-server",
     "dev": "npm run dev --prefix backend-server",
-    "build": "npm run build --prefix backend-server",
     "test": "npm run test --prefix backend-server"
   },
   "engines": {
