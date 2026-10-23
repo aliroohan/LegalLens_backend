@@ -23,11 +23,18 @@ export const validateBody = (schema: AnyZodObject) => {
 
 export const validate = validateBody;
 
-
 export const validateQuery = (schema: AnyZodObject) => {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      req.query = await schema.parseAsync(req.query);
+      const parsed = await schema.parseAsync(req.query);
+      // Express 5: req.query is a read-only getter, so assigning to it throws.
+      // Define it as an own property on this request instead.
+      Object.defineProperty(req, 'query', {
+        value: parsed,
+        writable: true,
+        configurable: true,
+        enumerable: true
+      });
       next();
     } catch (error) {
       if (error instanceof ZodError) {
