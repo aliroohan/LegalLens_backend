@@ -6,3 +6,5 @@ numpy
 Pillow
 scipy
 reportlab
+PyWavelets>=1.4
+scikit-learn
