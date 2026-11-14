@@ -10,3 +10,10 @@ static/
 
 node_modules/
 backend-server/node_modules/
+
+# Environment variables & secrets
+.env
+.env.*
+*.env
+google-credentials.json
+
