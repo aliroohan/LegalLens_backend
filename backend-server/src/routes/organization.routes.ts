@@ -50,6 +50,12 @@ router.get(
   OrganizationController.getStorageOverview
 );
 
+router.get(
+  '/super-admin/users',
+  requireRoles(USER_ROLES.SUPER_ADMIN),
+  OrganizationController.listPlatformUsers
+);
+
 router.patch(
   '/super-admin/users/:userId/quotas',
   requireRoles(USER_ROLES.SUPER_ADMIN),

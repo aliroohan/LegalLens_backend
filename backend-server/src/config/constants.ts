@@ -125,6 +125,7 @@ export const AUDIT_ACTIONS = [
   'CASE_DELETE',
   'FILE_UPLOAD',
   'FILE_DELETE',
+  'FILE_STORAGE_PURGED',
   'FORENSIC_ANALYSIS_RUN',
   'FORENSIC_ANALYSIS_RETRIGGER',
   'REVERSE_IMAGE_SEARCH',
@@ -170,3 +171,9 @@ export const AUTHENTICITY_THRESHOLDS = {
   AUTHENTIC_MAX: 0.30,
   SUSPICIOUS_MAX: 0.65
 };
+
+/** Days to keep soft-deleted evidence bytes on Cloudinary before permanent removal. */
+export const DELETED_FILE_CLOUDINARY_RETENTION_DAYS = 30;
+
+/** Background job interval for purging expired Cloudinary assets (ms). */
+export const CLOUDINARY_PURGE_JOB_INTERVAL_MS = 6 * 60 * 60 * 1000;

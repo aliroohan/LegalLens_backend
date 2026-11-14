@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { FileService } from '../services/file.service.ts';
+import { assertCaseAccess, assertFileAccess } from '../services/access.service.ts';
 import { sendSuccess, sendError } from '../utils/apiResponse.ts';
 
 export class FileController {
@@ -19,6 +20,7 @@ export class FileController {
         return;
       }
 
+      await assertCaseAccess(caseId, req.user!);
       const uploadedFiles = await FileService.uploadFiles(caseId, files, user);
       sendSuccess(res, uploadedFiles, 201);
     } catch (error) {
@@ -29,6 +31,7 @@ export class FileController {
   static async listFiles(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const caseId = req.params.caseId as string;
+      await assertCaseAccess(caseId, req.user!);
       const files = await FileService.listFilesForCase(caseId);
       sendSuccess(res, files, 200);
     } catch (error) {
@@ -39,7 +42,7 @@ export class FileController {
   static async getFileById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const fileId = req.params.fileId as string;
-      const file = await FileService.getFileById(fileId);
+      const file = await assertFileAccess(fileId, req.user!);
 
       if (!file) {
         sendError(res, 404, 'FILE_NOT_FOUND', `File with ID '${fileId}' was not found.`);
@@ -58,6 +61,7 @@ export class FileController {
   static async previewFile(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const fileId = req.params.fileId as string;
+      await assertFileAccess(fileId, req.user!);
       const { stream, mimeType, filename, fileSize } = await FileService.getFilePreviewStream(fileId);
 
       res.setHeader('Content-Type', mimeType);
@@ -74,6 +78,7 @@ export class FileController {
   static async deleteFile(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const fileId = req.params.fileId as string;
+      await assertFileAccess(fileId, req.user!);
       const user = {
         userId: req.user!.userId,
         userEmail: req.user?.email,

@@ -8,6 +8,15 @@ export class AuthController {
    */
   static async register(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
+      if (req.body?.role === 'super_admin' || req.body?.role === 'org_admin') {
+        sendError(
+          res,
+          403,
+          'REGISTRATION_FORBIDDEN',
+          'Public registration cannot create platform or organization administrator accounts.'
+        );
+        return;
+      }
       const user = await AuthService.register(req.body);
       sendSuccess(res, user, 201);
     } catch (error) {

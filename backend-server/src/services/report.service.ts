@@ -4,6 +4,9 @@ import { FileModel } from '../models/file.model.ts';
 import { ForensicResultModel } from '../models/forensicResult.model.ts';
 import { ReportModel, type IReportDocument } from '../models/report.model.ts';
 import { AuditService } from './audit.service.ts';
+import { NotificationService } from './notification.service.ts';
+import { buildTextPdf } from '../utils/simplePdf.ts';
+import { uploadBuffer } from './cloudinary.service.ts';
 
 export class ReportService {
   /**
@@ -13,7 +16,7 @@ export class ReportService {
     caseId: string,
     userId: string,
     userEmail?: string
-  ): Promise<{ reportId: string; reportData: Record<string, unknown> }> {
+  ): Promise<{ reportId: string; reportPath: string; reportData: Record<string, unknown> }> {
     const caseData = await CaseModel.findOne({ caseId, isDeleted: false }).lean();
     if (!caseData) {
       const err = new Error('Case not found.');
@@ -72,13 +75,46 @@ export class ReportService {
       generatedBy: userId
     };
 
+    const pdfLines = [
+      `Case: ${caseData.caseName}`,
+      `Client: ${caseData.clientName}`,
+      `Matter: ${caseData.matterType}`,
+      `Status: ${caseData.status}`,
+      `Files: ${files.length}`,
+      `Analyzed images: ${summaryData.analyzedImagesCount}`,
+      '',
+      ...imageReports.flatMap((image) => [
+        `${image.filename} — ${image.authenticityLabel} (${image.fusionScore ?? 'n/a'})`,
+        `SHA-256: ${image.sha256Hash}`
+      ])
+    ];
+    const pdf = buildTextPdf(`LegalLens report — ${caseData.caseName}`, pdfLines);
+    const uploaded = await uploadBuffer({
+      buffer: pdf,
+      folder: 'legallens/reports',
+      publicId: reportId,
+      resourceType: 'raw',
+      mimeType: 'application/pdf',
+      format: 'pdf'
+    });
+    const reportPath = uploaded.secure_url;
+
     // Retain report metadata under the case (FR-5.4)
     await ReportModel.create({
       reportId,
       caseId,
       generatedBy: userId,
       title: `Forensic Report - ${caseData.caseName}`,
-      summary: summaryData
+      summary: summaryData,
+      reportPath
+    });
+
+    await NotificationService.sendNotification({
+      userId,
+      caseId,
+      type: 'REPORT_READY',
+      title: 'Case report ready',
+      message: `A report for '${caseData.caseName}' is ready to download.`
     });
 
     // Audit report export (FR-7.1)
@@ -97,8 +133,20 @@ export class ReportService {
 
     return {
       reportId,
+      reportPath,
       reportData: summaryData
     };
+  }
+
+  static async getReportFile(reportId: string, caseId: string) {
+    const report = await ReportModel.findOne({ reportId, caseId }).lean();
+    if (!report?.reportPath) {
+      const err = new Error('Report file was not found.');
+      (err as any).status = 404;
+      (err as any).code = 'REPORT_NOT_FOUND';
+      throw err;
+    }
+    return report;
   }
 
   /**

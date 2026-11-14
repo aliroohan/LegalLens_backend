@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { ForensicsService } from '../services/forensics.service.ts';
 import { ReverseSearchService } from '../services/reverseSearch.service.ts';
+import { assertCaseAccess, assertFileAccess } from '../services/access.service.ts';
 import { sendSuccess, sendError } from '../utils/apiResponse.ts';
 
 export class ForensicsController {
@@ -10,6 +11,7 @@ export class ForensicsController {
   static async analyzeFile(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const fileId = req.params.fileId as string;
+      await assertFileAccess(fileId, req.user!);
       const userId = req.user!.userId;
       const userEmail = req.user?.email;
       const orgId = req.user?.orgId || req.user?.firmId;
@@ -28,6 +30,7 @@ export class ForensicsController {
   static async getResultByFileId(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const fileId = req.params.fileId as string;
+      await assertFileAccess(fileId, req.user!);
       const result = await ForensicsService.getResultByFileId(fileId);
 
       if (!result) {
@@ -47,6 +50,7 @@ export class ForensicsController {
   static async getResultsForCase(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const caseId = req.params.caseId as string;
+      await assertCaseAccess(caseId, req.user!);
       const results = await ForensicsService.getResultsForCase(caseId);
       sendSuccess(res, results, 200);
     } catch (error) {
@@ -60,6 +64,7 @@ export class ForensicsController {
   static async reverseImageSearch(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const fileId = req.params.fileId as string;
+      await assertFileAccess(fileId, req.user!);
       const userId = req.user!.userId;
       const userEmail = req.user?.email;
 
@@ -76,6 +81,7 @@ export class ForensicsController {
   static async getReverseSearchResults(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const fileId = req.params.fileId as string;
+      await assertFileAccess(fileId, req.user!);
       const result = await ReverseSearchService.getResultsForFile(fileId);
 
       if (!result) {

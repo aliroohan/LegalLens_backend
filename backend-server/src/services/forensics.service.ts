@@ -1,5 +1,4 @@
 import crypto from 'node:crypto';
-import fs from 'node:fs/promises';
 import axios from 'axios';
 import FormData from 'form-data';
 import { ForensicResultModel, type IForensicResultDocument } from '../models/forensicResult.model.ts';
@@ -155,10 +154,11 @@ export class ForensicsService {
 
     let fileBuffer: Buffer;
     try {
-      fileBuffer = await fs.readFile(file.workingCopyPath);
-    } catch (fsErr) {
-      logger.error(`[ForensicsService] Could not read working copy for file ${fileId}:`, fsErr);
-      fileBuffer = await fs.readFile(file.storagePath);
+      const { readStoredBytes } = await import('./cloudinary.service.ts');
+      fileBuffer = await readStoredBytes(file.storagePath);
+    } catch (readErr) {
+      logger.error(`[ForensicsService] Could not read stored evidence for file ${fileId}:`, readErr);
+      throw readErr;
     }
 
     // 3. Pre-flight Integrity Check (NFR Security & Integrity):
@@ -212,93 +212,69 @@ export class ForensicsService {
     let errorMessage: string | undefined;
 
     try {
-      // Call Python FastAPI microservice
       const formData = new FormData();
       formData.append('file', fileBuffer, {
         filename: file.filename,
         contentType: file.mimeType
       });
 
+      const baseUrl = ENV.PYTHON_FORENSICS_URL.replace(/\/$/, '');
       logger.info(
-        `[ForensicsService] Dispatching forensic analysis request to Python backend for file: ${file.fileId}...`
+        `[ForensicsService] Dispatching analysis for file ${file.fileId} to ${baseUrl}/api/analyze`
       );
 
-      const response = await axios.post(`${ENV.PYTHON_FORENSICS_URL}/analyze`, formData, {
+      const response = await axios.post(`${baseUrl}/api/analyze`, formData, {
         headers: {
           ...formData.getHeaders()
         },
-        timeout: 45000 // 45s timeout as per NFR (<30s expected)
+        timeout: 45000
       });
 
-      const data = response.data;
-
-      // Map Python response into structured module results (FR-4.1 - FR-4.6, FR-4.9)
-      if (data.modules) {
-        if (data.modules.exif) modules.exif = this.sanitizeModuleResult(data.modules.exif);
-        if (data.modules.ela) modules.ela = this.sanitizeModuleResult(data.modules.ela);
-        if (data.modules.copy_move || data.modules.copyMove) {
-          modules.copyMove = this.sanitizeModuleResult(data.modules.copy_move || data.modules.copyMove);
-        }
-        if (data.modules.noise) modules.noise = this.sanitizeModuleResult(data.modules.noise);
-        if (data.modules.lighting) modules.lighting = this.sanitizeModuleResult(data.modules.lighting);
-        if (data.modules.deepfake) modules.deepfake = this.sanitizeModuleResult(data.modules.deepfake);
-      }
+      const mapped = this.mapPythonAnalyses(response.data?.analyses);
+      modules.exif = mapped.exif;
+      modules.ela = mapped.ela;
+      modules.copyMove = mapped.copyMove;
+      modules.noise = mapped.noise;
+      modules.lighting = mapped.lighting;
+      modules.deepfake = mapped.deepfake;
     } catch (apiError: any) {
+      pipelineStatus = 'failed';
+      errorMessage =
+        apiError?.response?.data?.detail ||
+        apiError?.message ||
+        'Forensics service was unavailable.';
       logger.warn(
-        `[ForensicsService] Python forensic service returned error or was unavailable: ${apiError.message}. Executing fallback heuristics (FR-4.9).`
+        `[ForensicsService] Python forensic service unavailable for file ${fileId}: ${errorMessage}`
       );
 
-      // FR-4.9: If any module/pipeline has partial failure, mark as not_applicable instead of failing entire analysis
-      modules.exif = {
-        status: 'not_applicable',
-        subScore: 0.1,
-        explanation: 'No EXIF metadata was discovered in the uploaded image container.',
-        details: { note: 'EXIF analysis marked not applicable' }
-      };
-      modules.ela = {
-        status: 'not_applicable',
-        subScore: 0.15,
-        explanation: 'Error Level Analysis completed with nominal compression differential.',
-        details: {}
-      };
-      modules.copyMove = {
+      const unavailable = (name: string): ModuleResult => ({
         status: 'not_applicable',
         subScore: null,
-        explanation: 'SIFT block matching found no duplicated pixel regions.',
-        details: {}
-      };
-      modules.noise = {
-        status: 'not_applicable',
-        subScore: 0.1,
-        explanation: 'Uniform noise distribution observed across high-frequency components.',
-        details: {}
-      };
-      modules.lighting = {
-        status: 'not_applicable',
-        subScore: null,
-        explanation: 'Light vector estimation not applicable for this image.',
-        details: {}
-      };
-      modules.deepfake = {
-        status: 'not_applicable',
-        subScore: 0.12,
-        explanation: 'Neural network confidence indicates low synthetic artifact probability.',
-        details: {}
-      };
+        explanation: `${name} was not run because the forensics service did not return a result.`,
+        details: { reason: 'service_unavailable' }
+      });
+      modules.exif = unavailable('EXIF metadata');
+      modules.ela = unavailable('Error Level Analysis');
+      modules.copyMove = unavailable('Copy-move detection');
+      modules.noise = unavailable('Noise analysis');
+      modules.lighting = unavailable('Splicing detection');
+      modules.deepfake = unavailable('Compression analysis');
     }
 
-    // Compute Evidence Fusion Score (FR-4.7)
-    const { fusionScore, authenticityLabel, normalizedWeights } = this.computeFusionScore(
-      {
-        exif: modules.exif.subScore,
-        ela: modules.ela.subScore,
-        copyMove: modules.copyMove.subScore,
-        noise: modules.noise.subScore,
-        lighting: modules.lighting.subScore,
-        deepfake: modules.deepfake.subScore
-      },
-      customWeights
-    );
+    const fusion = pipelineStatus === 'failed'
+      ? { fusionScore: null as number | null, authenticityLabel: null as AuthenticityLabel | null, normalizedWeights: {} as Record<string, number> }
+      : this.computeFusionScore(
+          {
+            exif: modules.exif.subScore,
+            ela: modules.ela.subScore,
+            copyMove: modules.copyMove.subScore,
+            noise: modules.noise.subScore,
+            lighting: modules.lighting.subScore,
+            deepfake: modules.deepfake.subScore
+          },
+          customWeights
+        );
+    const { fusionScore, authenticityLabel, normalizedWeights } = fusion;
 
     const durationMs = Date.now() - startTime;
 
@@ -323,16 +299,27 @@ export class ForensicsService {
       pipelineStatus === 'completed' ? FILE_PROCESSING_STATUS.COMPLETED : FILE_PROCESSING_STATUS.FAILED;
     await file.save();
 
-    // Dispatch completion notification (FR-5.2)
-    await NotificationService.sendNotification({
-      userId,
-      orgId: orgId || file.orgId,
-      caseId: file.caseId,
-      fileId: file.fileId,
-      type: 'FORENSIC_COMPLETED',
-      title: 'Forensic Analysis Completed',
-      message: `Forensic analysis completed for '${file.originalName}'. Authenticity: ${authenticityLabel} (Score: ${fusionScore}).`
-    });
+    if (pipelineStatus === 'failed') {
+      await NotificationService.sendNotification({
+        userId,
+        orgId: orgId || file.orgId,
+        caseId: file.caseId,
+        fileId: file.fileId,
+        type: 'FORENSIC_FAILED',
+        title: 'Forensic Analysis Failed',
+        message: `Forensic analysis could not be completed for '${file.originalName}'. ${errorMessage || 'The forensics service was unavailable.'}`
+      });
+    } else {
+      await NotificationService.sendNotification({
+        userId,
+        orgId: orgId || file.orgId,
+        caseId: file.caseId,
+        fileId: file.fileId,
+        type: 'FORENSIC_COMPLETED',
+        title: 'Forensic Analysis Completed',
+        message: `Forensic analysis completed for '${file.originalName}'. Authenticity: ${authenticityLabel} (Score: ${fusionScore}).`
+      });
+    }
 
     // Audit forensic run (FR-7.1, FR-4.11)
     const auditAction = retriggeredCount > 0 ? 'FORENSIC_ANALYSIS_RETRIGGER' : 'FORENSIC_ANALYSIS_RUN';
@@ -372,6 +359,87 @@ export class ForensicsService {
   static async getResultsForCase(caseId: string): Promise<IForensicResult[]> {
     const results = await ForensicResultModel.find({ caseId }).sort({ analyzedAt: -1 });
     return results.map((r) => r.toObject() as IForensicResult);
+  }
+
+  /**
+   * Adapt the unchanged Python `/api/analyze` payload (`analyses`) into the Node module model.
+   * Lighting and deepfake CNN slots stay honest: splicing and compression are stored under those
+   * keys only with `sourceName` so the UI does not present them as CNN or lighting research.
+   */
+  static mapPythonAnalyses(analyses: Record<string, any> | undefined): {
+    exif: ModuleResult;
+    ela: ModuleResult;
+    copyMove: ModuleResult;
+    noise: ModuleResult;
+    lighting: ModuleResult;
+    deepfake: ModuleResult;
+  } {
+    const empty = (label: string): ModuleResult => ({
+      status: 'not_applicable',
+      subScore: null,
+      explanation: `${label} was not returned by the forensics service.`,
+      details: {}
+    });
+
+    if (!analyses || typeof analyses !== 'object') {
+      return {
+        exif: empty('EXIF metadata'),
+        ela: empty('Error Level Analysis'),
+        copyMove: empty('Copy-move detection'),
+        noise: empty('Noise analysis'),
+        lighting: empty('Splicing detection'),
+        deepfake: empty('Compression analysis')
+      };
+    }
+
+    return {
+      exif: this.mapPythonModule(analyses.metadata, 'EXIF Metadata Analysis', true),
+      ela: this.mapPythonModule(analyses.ela, 'Error Level Analysis'),
+      copyMove: this.mapPythonModule(analyses.copy_move, 'Copy-Move Detection'),
+      noise: this.mapPythonModule(analyses.noise, 'Noise Pattern Analysis'),
+      lighting: this.mapPythonModule(analyses.splicing, 'Image Splicing Detection'),
+      deepfake: this.mapPythonModule(analyses.compression, 'Compression Artifact Detection')
+    };
+  }
+
+  private static mapPythonModule(raw: any, sourceName: string, isMetadata = false): ModuleResult {
+    if (!raw || typeof raw !== 'object') {
+      return {
+        status: 'not_applicable',
+        subScore: null,
+        explanation: `${sourceName} was not returned by the forensics service.`,
+        details: { sourceName }
+      };
+    }
+
+    const findings = Array.isArray(raw.findings) ? raw.findings.filter((item: unknown) => typeof item === 'string') : [];
+    const failed = findings.some((item: string) => /failed/i.test(item)) && raw.visualization == null && raw.confidence == null;
+    const confidence = typeof raw.confidence === 'number' && !Number.isNaN(raw.confidence) ? raw.confidence : null;
+    const clamped = confidence === null ? null : Number(Math.max(0, Math.min(1, confidence)).toFixed(4));
+
+    let subScore = clamped;
+    if (isMetadata && subScore === null) {
+      const flags = Array.isArray(raw.flags) ? raw.flags : [];
+      subScore = flags.length === 0 ? 0 : Number(Math.min(1, flags.length * 0.25).toFixed(4));
+    }
+
+    const explanation =
+      findings.length > 0
+        ? `${sourceName}: ${findings.join(' ')}`
+        : `${sourceName} completed with no written findings.`;
+
+    return {
+      status: failed ? 'failed' : 'success',
+      subScore: failed ? null : subScore,
+      explanation,
+      heatmapBase64: typeof raw.visualization === 'string' && raw.visualization.length > 0 ? raw.visualization : null,
+      details: {
+        sourceName,
+        findings,
+        flags: raw.flags || [],
+        data: raw.data || {}
+      }
+    };
   }
 
   /**

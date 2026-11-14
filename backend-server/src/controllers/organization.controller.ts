@@ -60,6 +60,18 @@ export class OrganizationController {
     }
   }
 
+  static async listPlatformUsers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const barIdStatus = typeof req.query.barIdStatus === 'string' ? req.query.barIdStatus : undefined;
+      const isIndependent =
+        req.query.isIndependent === 'true' ? true : req.query.isIndependent === 'false' ? false : undefined;
+      const users = await OrganizationService.listPlatformUsers({ barIdStatus, isIndependent });
+      sendSuccess(res, users, 200);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async updateIndependentUserQuotas(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = req.params.userId as string;

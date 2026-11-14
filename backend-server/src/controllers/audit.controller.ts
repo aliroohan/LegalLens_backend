@@ -1,11 +1,13 @@
 import type { Request, Response, NextFunction } from 'express';
 import { AuditService } from '../services/audit.service.ts';
+import { assertCaseAccess } from '../services/access.service.ts';
 import { sendSuccess } from '../utils/apiResponse.ts';
 
 export class AuditController {
   static async getCaseHistory(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const caseId = req.params.caseId as string;
+      await assertCaseAccess(caseId, req.user!);
       const history = await AuditService.getCaseHistory(caseId);
       sendSuccess(res, history, 200);
     } catch (error) {

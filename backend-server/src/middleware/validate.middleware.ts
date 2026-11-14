@@ -1,8 +1,8 @@
 import type { Request, Response, NextFunction } from 'express';
-import { ZodError, type AnyZodObject } from 'zod';
+import { ZodError, type AnyZodObject, type ZodTypeAny } from 'zod';
 import { sendError } from '../utils/apiResponse.ts';
 
-export const validateBody = (schema: AnyZodObject) => {
+export const validateBody = (schema: ZodTypeAny) => {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       req.body = await schema.parseAsync(req.body);
