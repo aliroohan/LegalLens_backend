@@ -11,7 +11,9 @@ export const ENV = {
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '8h',
   PYTHON_FORENSICS_URL: process.env.PYTHON_FORENSICS_URL || 'http://127.0.0.1:8000',
   UPLOAD_DIR: process.env.UPLOAD_DIR || path.resolve(process.cwd(), 'uploads'),
-  CORS_ORIGIN: process.env.CORS_ORIGIN || '*'
+  CORS_ORIGIN: process.env.CORS_ORIGIN || '*',
+  RAPIDAPI_KEY: process.env.RAPIDAPI_KEY || '',
+  RAPIDAPI_HOST: process.env.RAPIDAPI_HOST || 'reverse-image-search1.p.rapidapi.com'
 
   // NODE_ENV: process.env.NODE_ENV,
   // PORT: parseInt(process.env.PORT || '5000' , 10),

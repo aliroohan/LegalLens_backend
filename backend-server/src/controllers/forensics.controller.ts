@@ -62,8 +62,9 @@ export class ForensicsController {
       const fileId = req.params.fileId as string;
       const userId = req.user!.userId;
       const userEmail = req.user?.email;
+      const imageUrl = (req.body?.imageUrl || req.query?.imageUrl) as string | undefined;
 
-      const results = await ReverseSearchService.search(fileId, userId, userEmail);
+      const results = await ReverseSearchService.search(fileId, userId, userEmail, imageUrl);
       sendSuccess(res, results, 200);
     } catch (error) {
       next(error);
