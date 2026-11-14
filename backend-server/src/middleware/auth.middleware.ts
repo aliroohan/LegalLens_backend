@@ -4,7 +4,11 @@ import { ENV } from '../config/env.ts';
 import { sendError } from '../utils/apiResponse.ts';
 import type { AuthUserPayload } from '../types/auth.types.ts';
 import { TokenBlacklistModel } from '../models/tokenBlacklist.model.ts';
+import { UserModel } from '../models/user.model.ts';
 import { BAR_ID_STATUS, USER_ROLES, type UserRole } from '../config/constants.ts';
+
+const INACTIVITY_MS = 8 * 60 * 60 * 1000;
+const REFRESH_AFTER_MS = 15 * 60 * 1000;
 
 export const requireAuth = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const authHeader = req.headers.authorization;
@@ -29,8 +33,55 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
   }
 
   try {
-    const decoded = jwt.verify(token, ENV.JWT_SECRET) as AuthUserPayload;
-    req.user = decoded;
+    const decoded = jwt.verify(token, ENV.JWT_SECRET) as AuthUserPayload & { iat?: number };
+    const user = await UserModel.findOne({ userId: decoded.userId, isActive: true });
+    if (!user) {
+      sendError(res, 401, 'UNAUTHORIZED', 'Account is no longer active.');
+      return;
+    }
+
+    const idleFor = Date.now() - new Date(user.lastActivityAt || 0).getTime();
+    if (idleFor > INACTIVITY_MS) {
+      await TokenBlacklistModel.create({
+        token,
+        userId: user.userId,
+        expiresAt: decoded.iat ? new Date((decoded.iat + 8 * 60 * 60) * 1000) : new Date(Date.now() + INACTIVITY_MS)
+      }).catch(() => undefined);
+      sendError(res, 401, 'SESSION_INACTIVE', 'Session expired after 8 hours of inactivity. Please log in again.');
+      return;
+    }
+
+    user.lastActivityAt = new Date();
+    await user.save();
+
+    const issuedAtMs = (decoded.iat || 0) * 1000;
+    if (issuedAtMs && Date.now() - issuedAtMs > REFRESH_AFTER_MS) {
+      const fresh = jwt.sign(
+        {
+          userId: user.userId,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          orgId: user.orgId,
+          firmId: user.firmId || user.orgId,
+          isIndependent: user.isIndependent,
+          barId: user.barId,
+          barIdStatus: user.barIdStatus
+        },
+        ENV.JWT_SECRET,
+        { expiresIn: ENV.JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'] }
+      );
+      res.setHeader('x-access-token', fresh);
+    }
+
+    req.user = {
+      ...decoded,
+      barIdStatus: user.barIdStatus,
+      orgId: user.orgId,
+      firmId: user.firmId || user.orgId,
+      isIndependent: user.isIndependent,
+      role: user.role
+    };
     next();
   } catch (error) {
     sendError(res, 401, 'INVALID_TOKEN', 'Session token is invalid or has expired after inactivity.');

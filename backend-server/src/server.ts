@@ -2,6 +2,7 @@ import app from './app.ts';
 import { ENV } from './config/env.ts';
 import { connectDatabase } from './config/database.ts';
 import { logger } from './utils/logger.ts';
+import { FileRetentionService } from './services/fileRetention.service.ts';
 
 const startServer = async () => {
   try {
@@ -13,6 +14,7 @@ const startServer = async () => {
       logger.info(`LegalLens backend server is running on http://localhost:${PORT}`);
       logger.info(`Environment: ${ENV.NODE_ENV}`);
       logger.info(`Python Forensics Service target: ${ENV.PYTHON_FORENSICS_URL}`);
+      FileRetentionService.startScheduledPurge();
     });
   } catch (error) {
     logger.error('Failed to start server:', error);

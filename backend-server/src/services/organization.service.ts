@@ -18,6 +18,9 @@ import type {
   OrganizationResponse
 } from '../types/organization.types.ts';
 import { AuditService } from './audit.service.ts';
+import { MailService } from './mail.service.ts';
+import { AuthService } from './auth.service.ts';
+import { ENV } from '../config/env.ts';
 import { logger } from '../utils/logger.ts';
 
 export class OrganizationService {
@@ -102,15 +105,29 @@ export class OrganizationService {
       }
     });
 
-    logger.info(`[OrganizationService] Organization created: ${org.name} (${orgId}). Org Admin credentials dispatched.`);
+    const delivery = await MailService.send(
+      org.adminEmail,
+      'Your LegalLens organization account',
+      `A LegalLens organization has been created for ${org.name}.\nSign in at ${ENV.APP_PUBLIC_URL}/auth/signin\nEmail: ${org.adminEmail}\nTemporary password: ${tempPassword}`
+    );
+
+    logger.info(`[OrganizationService] Organization created: ${org.name} (${orgId}). Email delivered: ${delivery.delivered}`);
 
     return {
       organization: this.formatOrgResponse(org, 1),
       adminCredentials: {
         email: org.adminEmail,
-        tempPassword
+        ...(delivery.delivered ? {} : { tempPassword })
       }
     };
+  }
+
+  static async listPlatformUsers(filters: { barIdStatus?: string; isIndependent?: boolean }) {
+    const query: Record<string, unknown> = { isActive: true };
+    if (filters.barIdStatus) query.barIdStatus = filters.barIdStatus;
+    if (typeof filters.isIndependent === 'boolean') query.isIndependent = filters.isIndependent;
+    const users = await UserModel.find(query).sort({ createdAt: -1 }).limit(200);
+    return users.map((user) => AuthService.formatUserResponse(user));
   }
 
   /**
@@ -390,6 +407,12 @@ export class OrganizationService {
       }
     });
 
+    const delivery = await MailService.send(
+      lawyer.email,
+      'Your LegalLens lawyer account',
+      `You were added to a LegalLens organization.\nSign in at ${ENV.APP_PUBLIC_URL}/auth/signin\nEmail: ${lawyer.email}\nTemporary password: ${tempPassword}`
+    );
+
     return {
       lawyer: {
         userId: lawyer.userId,
@@ -400,7 +423,7 @@ export class OrganizationService {
         role: lawyer.role,
         createdAt: lawyer.createdAt
       },
-      tempPassword
+      ...(delivery.delivered ? {} : { tempPassword })
     };
   }
 

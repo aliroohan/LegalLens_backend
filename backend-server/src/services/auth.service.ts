@@ -20,6 +20,7 @@ import type {
 } from '../validators/auth.validator.ts';
 import type { LoginResponse, UserResponse, AuthUserPayload } from '../types/auth.types.ts';
 import { AuditService } from './audit.service.ts';
+import { MailService } from './mail.service.ts';
 import { logger } from '../utils/logger.ts';
 
 export class AuthService {
@@ -290,10 +291,17 @@ export class AuthService {
       targetId: user.userId
     });
 
-    logger.info(`[AuthService] Password reset token generated for ${user.email}: ${resetToken}`);
+    const resetUrl = `${ENV.APP_PUBLIC_URL}/auth/reset-password?token=${resetToken}`;
+    const delivery = await MailService.send(
+      user.email,
+      'Reset your LegalLens password',
+      `Use this link within one hour to reset your password:\n${resetUrl}\n\nIf you did not request this, you can ignore this email.`
+    );
+
+    logger.info(`[AuthService] Password reset requested for ${user.email}. Email delivered: ${delivery.delivered}`);
     return {
       message: 'If an account exists with that email, a password reset link has been dispatched.',
-      resetToken // In development returned for easy testing; in production dispatched via email
+      ...(ENV.NODE_ENV !== 'production' && !delivery.delivered ? { resetToken } : {})
     };
   }
 
@@ -368,10 +376,18 @@ export class AuthService {
       }
     });
 
-    logger.info(`[AuthService] Org admin ${adminUserId} reset password for user ${user.email}.`);
+    const delivery = await MailService.send(
+      user.email,
+      'Your LegalLens password was reset',
+      `An organization administrator reset your LegalLens password.\nTemporary password: ${tempPassword}\nSign in and change it after you log in.`
+    );
+
+    logger.info(`[AuthService] Org admin ${adminUserId} reset password for user ${user.email}. Email delivered: ${delivery.delivered}`);
     return {
-      message: `Password reset successfully for '${user.email}'. Credentials sent via email.`,
-      tempPassword
+      message: delivery.delivered
+        ? `Password reset successfully for '${user.email}'. Credentials sent via email.`
+        : `Password reset successfully for '${user.email}'. Email is not configured, so the temporary password is included in this response.`,
+      ...(delivery.delivered ? {} : { tempPassword })
     };
   }
 

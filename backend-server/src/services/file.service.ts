@@ -1,10 +1,7 @@
 import crypto from 'node:crypto';
-import fs from 'node:fs/promises';
-import { createReadStream, statSync } from 'node:fs';
 import path from 'node:path';
 import { FileModel, type IFileDocument } from '../models/file.model.ts';
 import { CaseModel } from '../models/case.model.ts';
-import { ENV } from '../config/env.ts';
 import {
   ALLOWED_IMAGE_MIME_TYPES,
   ALLOWED_DOCUMENT_MIME_TYPES,
@@ -22,6 +19,7 @@ import { AuditService } from './audit.service.ts';
 import { CaseService } from './case.service.ts';
 import { OrganizationService } from './organization.service.ts';
 import { ForensicsService } from './forensics.service.ts';
+import { openStoredStream, uploadBuffer } from './cloudinary.service.ts';
 import { logger } from '../utils/logger.ts';
 
 export class FileService {
@@ -51,19 +49,6 @@ export class FileService {
       case 'video':
         return MAX_VIDEO_SIZE_BYTES; // 100MB
     }
-  }
-
-  /**
-   * Ensure upload directories exist
-   */
-  private static async ensureDirectories(caseId: string): Promise<{ originalsDir: string; workingDir: string }> {
-    const originalsDir = path.join(ENV.UPLOAD_DIR, caseId, 'originals');
-    const workingDir = path.join(ENV.UPLOAD_DIR, caseId, 'working_copies');
-
-    await fs.mkdir(originalsDir, { recursive: true });
-    await fs.mkdir(workingDir, { recursive: true });
-
-    return { originalsDir, workingDir };
   }
 
   /**
@@ -103,7 +88,6 @@ export class FileService {
     // 2. Check storage quota before proceeding (FR-2.7, FR-8.1, FR-9.6)
     await OrganizationService.checkStorageAvailable(user, totalBatchBytes);
 
-    const { originalsDir, workingDir } = await this.ensureDirectories(caseId);
     const uploadedResults: UploadedFileResponse[] = [];
 
     for (const file of files) {
@@ -132,14 +116,15 @@ export class FileService {
       const ext = path.extname(file.originalname);
       const safeFilename = `${fileId}${ext}`;
 
-      const originalStoragePath = path.join(originalsDir, safeFilename);
-      const workingStoragePath = path.join(workingDir, safeFilename);
-
-      // Store unmodified original file (FR-3.4)
-      await fs.writeFile(originalStoragePath, file.buffer);
-
-      // Create working copy for any processing/forensics (FR-3.4)
-      await fs.writeFile(workingStoragePath, file.buffer);
+      const resourceType = 'raw' as const;
+      const uploaded = await uploadBuffer({
+        buffer: file.buffer,
+        folder: `legallens/${caseId}`,
+        publicId: fileId,
+        resourceType,
+        mimeType: file.mimetype
+      });
+      const secureUrl = uploaded.secure_url;
 
       const processingStatus =
         fileCategory === 'image' ? FILE_PROCESSING_STATUS.PENDING : FILE_PROCESSING_STATUS.NOT_APPLICABLE;
@@ -156,8 +141,10 @@ export class FileService {
         uploaderId: user.userId,
         orgId: user.orgId,
         sha256Hash,
-        storagePath: originalStoragePath,
-        workingCopyPath: workingStoragePath,
+        storagePath: secureUrl,
+        workingCopyPath: secureUrl,
+        cloudinaryPublicId: uploaded.public_id,
+        cloudinaryResourceType: resourceType,
         processingStatus,
         isDeleted: false,
         uploadedAt: new Date()
@@ -251,16 +238,14 @@ export class FileService {
       throw err;
     }
 
-    // Always stream from working copy if available, else original (FR-3.8: never touches or modifies original)
-    const previewPath = file.workingCopyPath || file.storagePath;
-    const stats = statSync(previewPath);
-    const stream = createReadStream(previewPath);
+    const previewLocation = file.storagePath;
+    const stream = await openStoredStream(previewLocation);
 
     return {
       stream,
       mimeType: file.mimeType,
       filename: file.originalName,
-      fileSize: stats.size
+      fileSize: file.sizeBytes
     };
   }
 
@@ -288,7 +273,7 @@ export class FileService {
       throw err;
     }
 
-    // Soft delete: set flag to true, keep file in storage for chain-of-custody (FR-3.7, NFR Data Retention)
+    // Soft delete: metadata and audit stay; Cloudinary bytes are removed after retention window (see FileRetentionService).
     file.isDeleted = true;
     file.deletedAt = new Date();
     await file.save();

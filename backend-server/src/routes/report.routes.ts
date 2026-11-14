@@ -15,5 +15,6 @@ router.post('/cases/:caseId/export', ReportController.exportCaseReport);
 
 // List generated reports for case (FR-6.4)
 router.get('/cases/:caseId/reports', ReportController.listCaseReports);
+router.get('/cases/:caseId/reports/:reportId/download', ReportController.downloadReport);
 
 export default router;

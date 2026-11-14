@@ -15,10 +15,14 @@ export interface IFileDocument extends Document {
   sha256Hash: string;
   storagePath: string;
   workingCopyPath: string;
+  cloudinaryPublicId?: string;
+  cloudinaryResourceType?: 'image' | 'video' | 'raw';
   processingStatus: FileProcessingStatus;
   isDeleted: boolean;
   uploadedAt: Date;
   deletedAt?: Date;
+  /** Set when the Cloudinary asset is removed after the post-delete retention window. */
+  cloudinaryPurgedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -42,6 +46,8 @@ const FileSchema = new Schema<IFileDocument>(
     sha256Hash: { type: String, required: true, index: true },
     storagePath: { type: String, required: true },
     workingCopyPath: { type: String, required: true },
+    cloudinaryPublicId: { type: String },
+    cloudinaryResourceType: { type: String, enum: ['image', 'video', 'raw'] },
     processingStatus: {
       type: String,
       enum: Object.values(FILE_PROCESSING_STATUS),
@@ -50,7 +56,8 @@ const FileSchema = new Schema<IFileDocument>(
     },
     isDeleted: { type: Boolean, default: false, index: true },
     uploadedAt: { type: Date, default: Date.now },
-    deletedAt: { type: Date }
+    deletedAt: { type: Date },
+    cloudinaryPurgedAt: { type: Date }
   },
   {
     timestamps: true
@@ -58,5 +65,6 @@ const FileSchema = new Schema<IFileDocument>(
 );
 
 FileSchema.index({ caseId: 1, isDeleted: 1, uploadedAt: -1 });
+FileSchema.index({ isDeleted: 1, deletedAt: 1, cloudinaryPurgedAt: 1 });
 
 export const FileModel = mongoose.model<IFileDocument>('File', FileSchema);

@@ -5,7 +5,7 @@ export const registerSchema = z.object({
   email: z.string().email('Invalid email address'),
   password: z.string().min(6, 'Password must be at least 6 characters long'),
   name: z.string().min(1, 'Name is required'),
-  role: z.enum([USER_ROLES.SUPER_ADMIN, USER_ROLES.ORG_ADMIN, USER_ROLES.LAWYER]).optional(),
+  role: z.enum([USER_ROLES.LAWYER]).optional(),
   firmId: z.string().optional(),
   orgId: z.string().optional(),
   barId: z.string().optional(),
@@ -35,10 +35,20 @@ export const forgotPasswordSchema = z.object({
   email: z.string().email('Valid email address is required')
 });
 
-export const resetPasswordSchema = z.object({
-  token: z.string().min(1, 'Reset token is required'),
-  newPassword: z.string().min(6, 'Password must be at least 6 characters long')
-});
+export const resetPasswordSchema = z
+  .object({
+    token: z.string().min(1, 'Reset token is required'),
+    newPassword: z.string().min(6, 'Password must be at least 6 characters long').optional(),
+    password: z.string().min(6, 'Password must be at least 6 characters long').optional()
+  })
+  .refine((value) => Boolean(value.newPassword || value.password), {
+    message: 'Password is required',
+    path: ['password']
+  })
+  .transform((value) => ({
+    token: value.token,
+    newPassword: (value.newPassword || value.password) as string
+  }));
 
 export const verifyBarIdSchema = z.object({
   status: z.enum([BAR_ID_STATUS.VERIFIED, BAR_ID_STATUS.REJECTED]),
