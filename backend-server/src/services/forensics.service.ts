@@ -20,9 +20,9 @@ import { logger } from '../utils/logger.ts';
 
 export class ForensicsService {
   /**
-   * Evidence Fusion Algorithm (FR-4.7)
-   * Combines applicable module sub-scores into one Fusion Authenticity Score (0.00 - 1.00)
-   * Normalizes weights for applicable modules when any module is not applicable.
+- Evidence Fusion Algorithm (FR-4.7)
+- Combines applicable module sub-scores into one Fusion Authenticity Score (0.00 - 1.00)
+- Normalizes weights for applicable modules when any module is not applicable.
    */
   static computeFusionScore(
     moduleScores: {
@@ -30,6 +30,7 @@ export class ForensicsService {
       ela?: number | null;
       copyMove?: number | null;
       noise?: number | null;
+      splicing?: number | null;
       lighting?: number | null;
       deepfake?: number | null;
     },
@@ -93,7 +94,7 @@ export class ForensicsService {
   }
 
   /**
-   * Run full forensic pipeline on an image file (FR-4.1 - FR-4.11, FR-9.7 - FR-9.9, NFR Integrity)
+- Run full forensic pipeline on an image file (FR-4.1 - FR-4.11, FR-9.7 - FR-9.9, NFR Integrity)
    */
   static async analyzeFile(
     fileId: string,
@@ -197,6 +198,7 @@ export class ForensicsService {
       ela: ModuleResult;
       copyMove: ModuleResult;
       noise: ModuleResult;
+      splicing: ModuleResult;
       lighting: ModuleResult;
       deepfake: ModuleResult;
     } = {
@@ -204,6 +206,7 @@ export class ForensicsService {
       ela: defaultModule(),
       copyMove: defaultModule(),
       noise: defaultModule(),
+      splicing: defaultModule(),
       lighting: defaultModule(),
       deepfake: defaultModule()
     };
@@ -235,6 +238,7 @@ export class ForensicsService {
       modules.ela = mapped.ela;
       modules.copyMove = mapped.copyMove;
       modules.noise = mapped.noise;
+      modules.splicing = mapped.splicing;
       modules.lighting = mapped.lighting;
       modules.deepfake = mapped.deepfake;
     } catch (apiError: any) {
@@ -257,7 +261,8 @@ export class ForensicsService {
       modules.ela = unavailable('Error Level Analysis');
       modules.copyMove = unavailable('Copy-move detection');
       modules.noise = unavailable('Noise analysis');
-      modules.lighting = unavailable('Splicing detection');
+      modules.splicing = unavailable('Image Splicing Detection');
+      modules.lighting = unavailable('Lighting & Shadow Analysis');
       modules.deepfake = unavailable('Compression analysis');
     }
 
@@ -269,6 +274,7 @@ export class ForensicsService {
             ela: modules.ela.subScore,
             copyMove: modules.copyMove.subScore,
             noise: modules.noise.subScore,
+            splicing: modules.splicing.subScore,
             lighting: modules.lighting.subScore,
             deepfake: modules.deepfake.subScore
           },
@@ -346,7 +352,7 @@ export class ForensicsService {
   }
 
   /**
-   * Retrieve latest forensic result for a file (FR-4.10)
+- Retrieve latest forensic result for a file (FR-4.10)
    */
   static async getResultByFileId(fileId: string): Promise<IForensicResult | null> {
     const result = await ForensicResultModel.findOne({ fileId }).sort({ createdAt: -1 });
@@ -354,7 +360,7 @@ export class ForensicsService {
   }
 
   /**
-   * Retrieve all forensic results for a case (FR-4.10)
+- Retrieve all forensic results for a case (FR-4.10)
    */
   static async getResultsForCase(caseId: string): Promise<IForensicResult[]> {
     const results = await ForensicResultModel.find({ caseId }).sort({ analyzedAt: -1 });
@@ -362,15 +368,14 @@ export class ForensicsService {
   }
 
   /**
-   * Adapt the unchanged Python `/api/analyze` payload (`analyses`) into the Node module model.
-   * Lighting and deepfake CNN slots stay honest: splicing and compression are stored under those
-   * keys only with `sourceName` so the UI does not present them as CNN or lighting research.
+- Adapt the Python `/api/analyze` payload (`analyses`) into the Node module model.
    */
   static mapPythonAnalyses(analyses: Record<string, any> | undefined): {
     exif: ModuleResult;
     ela: ModuleResult;
     copyMove: ModuleResult;
     noise: ModuleResult;
+    splicing: ModuleResult;
     lighting: ModuleResult;
     deepfake: ModuleResult;
   } {
@@ -387,7 +392,8 @@ export class ForensicsService {
         ela: empty('Error Level Analysis'),
         copyMove: empty('Copy-move detection'),
         noise: empty('Noise analysis'),
-        lighting: empty('Splicing detection'),
+        splicing: empty('Image Splicing Detection'),
+        lighting: empty('Lighting & Shadow Analysis'),
         deepfake: empty('Compression analysis')
       };
     }
@@ -397,7 +403,8 @@ export class ForensicsService {
       ela: this.mapPythonModule(analyses.ela, 'Error Level Analysis'),
       copyMove: this.mapPythonModule(analyses.copy_move, 'Copy-Move Detection'),
       noise: this.mapPythonModule(analyses.noise, 'Noise Pattern Analysis'),
-      lighting: this.mapPythonModule(analyses.splicing, 'Image Splicing Detection'),
+      splicing: this.mapPythonModule(analyses.splicing, 'Image Splicing Detection'),
+      lighting: this.mapPythonModule(analyses.lighting_shadow, 'Lighting & Shadow Analysis'),
       deepfake: this.mapPythonModule(analyses.compression, 'Compression Artifact Detection')
     };
   }
@@ -414,6 +421,7 @@ export class ForensicsService {
 
     const findings = Array.isArray(raw.findings) ? raw.findings.filter((item: unknown) => typeof item === 'string') : [];
     const failed = findings.some((item: string) => /failed/i.test(item)) && raw.visualization == null && raw.confidence == null;
+    const inconclusive = raw.inconclusive === true;
     const confidence = typeof raw.confidence === 'number' && !Number.isNaN(raw.confidence) ? raw.confidence : null;
     const clamped = confidence === null ? null : Number(Math.max(0, Math.min(1, confidence)).toFixed(4));
 
@@ -429,8 +437,8 @@ export class ForensicsService {
         : `${sourceName} completed with no written findings.`;
 
     return {
-      status: failed ? 'failed' : 'success',
-      subScore: failed ? null : subScore,
+      status: failed ? 'failed' : inconclusive ? 'not_applicable' : 'success',
+      subScore: failed || inconclusive ? null : subScore,
       explanation,
       heatmapBase64: typeof raw.visualization === 'string' && raw.visualization.length > 0 ? raw.visualization : null,
       details: {
@@ -443,7 +451,7 @@ export class ForensicsService {
   }
 
   /**
-   * Helper to sanitize module result data from Python service (FR-4.9)
+- Helper to sanitize module result data from Python service (FR-4.9)
    */
   private static sanitizeModuleResult(raw: any): ModuleResult {
     if (!raw) {

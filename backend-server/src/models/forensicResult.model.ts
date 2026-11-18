@@ -14,6 +14,7 @@ export interface IForensicResultDocument extends Document {
     ela: ModuleResult;
     copyMove: ModuleResult;
     noise: ModuleResult;
+    splicing: ModuleResult;
     lighting: ModuleResult;
     deepfake: ModuleResult;
   };
@@ -60,6 +61,7 @@ const ForensicResultSchema = new Schema<IForensicResultDocument>(
       ela: { type: ModuleResultSchema, required: true },
       copyMove: { type: ModuleResultSchema, required: true },
       noise: { type: ModuleResultSchema, required: true },
+      splicing: { type: ModuleResultSchema, required: true },
       lighting: { type: ModuleResultSchema, required: true },
       deepfake: { type: ModuleResultSchema, required: true }
     },

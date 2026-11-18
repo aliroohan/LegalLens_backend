@@ -163,6 +163,7 @@ export const DEFAULT_FORENSIC_WEIGHTS = {
   ela: 0.20,
   copyMove: 0.20,
   noise: 0.15,
+  splicing: 0.10,
   lighting: 0.10,
   deepfake: 0.20
 };
