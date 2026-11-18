@@ -9,4 +9,5 @@ reportlab
 PyWavelets>=1.4
 scikit-learn
 google-cloud-vision
+ultralytics
 

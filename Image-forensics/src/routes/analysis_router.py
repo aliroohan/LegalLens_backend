@@ -26,6 +26,7 @@ from services.compression_service import run_compression_analysis
 from services.metadata_service import run_metadata_analysis
 from services.splicing_service import run_splicing_detection
 from services.report_service import generate_report
+from services.lighting_shadow_service import run_lighting_shadow
 
 router = APIRouter(prefix="/api", tags=["analysis"])
 
@@ -84,14 +85,16 @@ async def analyze_image(file: UploadFile = File(...)):
         noise_result,
         compression_result,
         metadata_result,
-        splicing_result
+        splicing_result,
+        lighting_result
     ) = await asyncio.gather(
         asyncio.to_thread(safe_analyze, run_ela, image_bytes),
         asyncio.to_thread(safe_analyze, run_copy_move, image_bytes),
         asyncio.to_thread(safe_analyze, run_noise_analysis, image_bytes),
         asyncio.to_thread(safe_analyze, run_compression_analysis, image_bytes),
         asyncio.to_thread(safe_analyze, run_metadata_analysis, image_bytes, True),
-        asyncio.to_thread(safe_analyze, run_splicing_detection, image_bytes)
+        asyncio.to_thread(safe_analyze, run_splicing_detection, image_bytes),
+        asyncio.to_thread(safe_analyze, run_lighting_shadow, image_bytes),
     )
 
     # --- Build response ---
@@ -143,6 +146,14 @@ async def analyze_image(file: UploadFile = File(...)):
                 "confidence": splicing_result["confidence"],
                 "findings": splicing_result["findings"],
                 "visualization": _cv2_to_b64(splicing_result["visualization"]) if splicing_result.get("visualization") is not None else None,
+            },
+            "lighting_shadow": {
+                "name": "Lighting & Shadow Analysis",
+                "description": "Estimates light directions from shading and shadow orientations, then checks whether they are mutually consistent to detect composited regions.",
+                "confidence": lighting_result["confidence"],
+                "inconclusive": lighting_result.get("inconclusive", False),
+                "findings": lighting_result["findings"],
+                "visualization": _cv2_to_b64(lighting_result["visualization"]) if lighting_result.get("visualization") is not None else None,
             },
         },
     }
